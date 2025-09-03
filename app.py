@@ -9,7 +9,7 @@ import pandas as pd
 # ------------------------------
 # Load YOLOv8 model
 # ------------------------------
-model = YOLO("c:\Users\Thennarasu\OneDrive\Documents\best.pt")  # update path if needed
+model = YOLO("best.pt")  # update path if needed
 
 # ------------------------------
 # Page Config
