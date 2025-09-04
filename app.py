@@ -125,3 +125,13 @@ if uploaded_file:
                 )
 
         st.markdown("</div>", unsafe_allow_html=True)
+
+
+import os
+
+# Automatically create metadata.csv if missing
+if not os.path.exists("metadata.csv"):
+    df = pd.DataFrame(columns=["timestamp","image_name","class_label","confidence","bbox"])
+    df.to_csv("metadata.csv", index=False)
+    print("metadata.csv created automatically!")
+
