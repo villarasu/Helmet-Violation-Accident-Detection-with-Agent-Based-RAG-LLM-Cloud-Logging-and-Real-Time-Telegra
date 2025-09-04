@@ -1,6 +1,5 @@
 import streamlit as st
 from ultralytics import YOLO
-import cv2
 import tempfile
 import os
 from PIL import Image
@@ -10,6 +9,8 @@ import pandas as pd
 # Load YOLOv8 model
 # ------------------------------
 model = YOLO("best.pt")  # update path if needed
+model.to("cpu")
+
 
 # ------------------------------
 # Page Config
@@ -68,12 +69,9 @@ uploaded_file = st.file_uploader("📂 Upload Image/Video", type=["jpg","jpeg","
 if uploaded_file:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    # Preview image
-    if uploaded_file.type in ["image/jpeg","image/png","image/jpg"]:
+    if uploaded_file.type in ["image/jpeg", "image/png", "image/jpg"]:
         img = Image.open(uploaded_file)
         st.image(img, caption="Original Image", width=500)
-
-    # Preview video
     elif uploaded_file.type == "video/mp4":
         tfile = tempfile.NamedTemporaryFile(delete=False)
         tfile.write(uploaded_file.read())
@@ -82,17 +80,17 @@ if uploaded_file:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Process Detection
+    # Run detection only on button click
     if st.button("🚀 Run Detection"):
         st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-        if uploaded_file.type in ["image/jpeg","image/png","image/jpg"]:
+        if uploaded_file.type in ["image/jpeg", "image/png", "image/jpg"]:
             with st.spinner("🔍 Running detection..."):
                 results = model.predict(img, conf=conf_threshold)
             res_img = results[0].plot()
             st.image(res_img, caption="Processed Image", width=500)
 
-            # Detection Summary as badges
+            # Detection summary
             class_counts = results[0].boxes.cls.cpu().numpy()
             labels = [results[0].names[int(i)] for i in class_counts]
             df = pd.Series(labels).value_counts()
@@ -103,10 +101,20 @@ if uploaded_file:
 
         elif uploaded_file.type == "video/mp4":
             with st.spinner("🔍 Processing video..."):
-                results = model.predict(source=video_path, save=True, conf=conf_threshold)
-            output_dir = results[0].save_dir
-            processed_video_path = os.path.join(output_dir, os.path.basename(video_path))
+                output_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+                results = model.predict(
+                    source=video_path,
+                    save=True,
+                    conf=conf_threshold,
+                    project=os.path.dirname(output_file),
+                    name=os.path.splitext(os.path.basename(output_file))[0]
+                )
+                processed_video_path = output_file
+
             st.success("✅ Video processed successfully!")
+            st.subheader("🎥 Processed Video Preview")
+            st.video(processed_video_path)
+
             st.subheader("📥 Download Processed Video")
             with open(processed_video_path, "rb") as f:
                 st.download_button(
@@ -115,4 +123,5 @@ if uploaded_file:
                     file_name="processed_video.mp4",
                     mime="video/mp4"
                 )
+
         st.markdown("</div>", unsafe_allow_html=True)
