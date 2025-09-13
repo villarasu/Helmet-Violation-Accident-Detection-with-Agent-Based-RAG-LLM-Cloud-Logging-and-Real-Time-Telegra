@@ -30,7 +30,7 @@ We need an automated system that watches videos or uploaded images, detects two 
 
 ### Chatbot & RAG
 
-* Provide a chatbot interface that can answer queries against incident history (example: "Show today’s no-helmet cases near Gate 3"). Use a RAG approach with embeddings + retrieval.
+* Provide a chatbot interface that can answer queries against incident history (example: "Show me reports"). Use a RAG approach with embeddings + retrieval.
 
 ### Operational Goals
 
@@ -48,11 +48,5 @@ We need an automated system that watches videos or uploaded images, detects two 
 * Usable Streamlit UI for upload, review, and manual verification.
 * Daily/weekly summary emails delivered to stakeholders.
 
----
 
-### Submission Instructions
 
-1. Save this file as `PROBLEM_STATEMENT.md` in your project repository or cloud storage.
-2. Make the repository or file **public** or **shareable**.
-3. Copy the shareable URL (e.g., GitHub: `https://github.com/yourusername/helmet-accident-project/blob/main/PROBLEM_STATEMENT.md`).
-4. Paste the link in your LMS submission or email as your final project problem statement.
