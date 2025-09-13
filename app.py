@@ -14,6 +14,7 @@ from ultralytics import YOLO
 from PIL import Image
 from fpdf import FPDF
 import smtplib
+import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
@@ -110,8 +111,19 @@ def send_telegram_alert(camera_id: str, location: str, timestamp: str, confidenc
         # Don't crash the app if Telegram fails
         st.warning("Telegram alert failed (check token/chat id).")
 
+def wrap_url(url: str, max_len: int = 120) -> str:
+    """Insert break opportunities or truncate long URLs so FPDF can wrap them."""
+    if not url:
+        return ""
+    # Insert zero-width spaces after common URL delimiters for line wrapping
+    safe_url = re.sub(r"([/_?=&-])", r"\1\u200b", url)
+    # Truncate extremely long URLs
+    if len(safe_url) > max_len:
+        return safe_url[:max_len] + "..."
+    return safe_url
+
 def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
-    """Creates a PDF report from a DataFrame."""
+    """Creates a PDF report from a DataFrame with safe URL wrapping."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", size=16)
@@ -120,20 +132,23 @@ def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
     pdf.ln(10)
 
     for _, row in df.iterrows():
-        # Ensure timestamp is a string
         ts = str(row.get("timestamp", "N/A"))
         cam = str(row.get("camera_id", "N/A"))
         cls = str(row.get("class_label", "N/A"))
         conf = row.get("confidence", 0.0)
-        
+
         pdf.set_font("Arial", "B", 10)
-        pdf.multi_cell(0, 7, f"Timestamp: {ts} | Camera: {cam} | Class: {cls} | Confidence: {conf:.2f}")
-        
+        pdf.multi_cell(
+            0, 7,
+            f"Timestamp: {ts} | Camera: {cam} | Class: {cls} | Confidence: {conf:.2f}"
+        )
+
         pdf.set_font("Arial", "", 9)
         proof = row.get("proof_url", "") or row.get("s3_image_url", "")
-        pdf.multi_cell(0, 5, f"Proof URL: {proof}")
-        pdf.ln(4) # Add a small space between entries
-        
+        safe_proof = wrap_url(proof)     # ✅ wrap/truncate the URL
+        pdf.multi_cell(0, 5, f"Proof URL: {safe_proof}")
+        pdf.ln(4)
+
     pdf.output(filename)
     return filename
 
