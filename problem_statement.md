@@ -43,7 +43,7 @@ We need an automated system that watches videos or uploaded images, detects two 
 ## Success Criteria
 
 * Reliable detection of helmet/no-helmet/accident events with high precision and acceptable recall.
-* Real-time alerts (<\~seconds) to Telegram for critical events.
+* Real-time alerts  to Telegram for critical events.
 * Accurate, queryable logs in RDS and accessible evidence in S3.
 * Usable Streamlit UI for upload, review, and manual verification.
 * Daily/weekly summary emails delivered to stakeholders.
