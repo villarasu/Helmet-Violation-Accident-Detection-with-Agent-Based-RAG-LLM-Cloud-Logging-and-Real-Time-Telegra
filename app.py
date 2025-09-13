@@ -110,7 +110,6 @@ def send_telegram_alert(camera_id: str, location: str, timestamp: str, confidenc
     except Exception:
         # Don't crash the app if Telegram fails
         st.warning("Telegram alert failed (check token/chat id).")
-
 def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
     pdf = FPDF()
     pdf.add_page()
@@ -120,25 +119,46 @@ def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
     pdf.ln(10)
 
     def safe_multicell(pdf, text, line_height=5, max_chars=90):
+        """
+        Safely adds multi-line text to the PDF, breaking long words and URLs if needed.
+        """
         if not text:
             return
+
+        # Remove zero-width or BOM characters
         text = text.replace("\u200b", "").replace("\ufeff", "")
+        # Insert soft hyphens after common URL/parameter characters
         text = re.sub(r"([/_?=&-])", lambda m: m.group(1) + "\xAD", text)
-        lines = [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
-        for line in lines:
-            pdf.multi_cell(0, line_height, line)
+
+        # Split by whitespace first; fallback to max_chars for very long words
+        words = text.split()
+        line = ""
+        for word in words:
+            # If adding this word exceeds max_chars, write the current line
+            if len(line + " " + word) > max_chars:
+                pdf.multi_cell(0, line_height, line.strip(), break_long_words=True)
+                line = word
+            else:
+                line += " " + word
+        if line:
+            pdf.multi_cell(0, line_height, line.strip(), break_long_words=True)
 
     for _, row in df.iterrows():
         ts = str(row.get("timestamp", "N/A"))
         cam = str(row.get("camera_id", "N/A"))
         cls = str(row.get("class_label", "N/A"))
         conf = row.get("confidence", 0.0)
+
+        # Header for each detection
         pdf.set_font("Arial", "B", 10)
         pdf.multi_cell(0, 7, f"Timestamp: {ts} | Camera: {cam} | Class: {cls} | Confidence: {conf:.2f}")
-        pdf.set_font("Courier", "", 9)
+
+        # Proof URL or S3 image
+        pdf.set_font("Courier", "", 8)  # Smaller font for long URLs
         proof = row.get("proof_url", "") or row.get("s3_image_url", "")
         safe_multicell(pdf, f"Proof URL: {proof}", line_height=5, max_chars=80)
-        pdf.ln(4)
+
+        pdf.ln(4)  # Space between entries
 
     pdf.output(filename)
     return filename
