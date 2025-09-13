@@ -32,3 +32,6 @@ typing-extensions>=4.12.0   # Modern type hints support
 # --- Compatibility Fixes ---
 protobuf<5.0                # Prevents Streamlit protobuf conflicts
 
+reportlab>=4.2.0
+
+
