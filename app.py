@@ -122,35 +122,83 @@ def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
     pdf.set_font("Arial", "", 12)
     pdf.ln(10)
 
-    def safe_multicell(pdf, text: str, line_height=5, max_chars=80):
-        """Break extremely long words/URLs safely for fpdf2."""
+    import re
+from fpdf import FPDF
+import pandas as pd
+
+def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
+    """
+    Robust PDF generator that safely breaks long words/URLs without relying
+    on fpdf2-only arguments like `break_long_words`.
+    """
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "Helmet & Accident Detection Report", ln=True, align="C")
+    pdf.set_font("Arial", "", 12)
+    pdf.ln(10)
+
+    def safe_multicell(pdf: FPDF, text: str, line_height: float = 5.0):
+        """
+        Adds `text` to PDF, breaking very long tokens to fit the page width.
+        Uses pdf.get_string_width to measure widths so it works on any fpdf.
+        """
         if not text:
             return
-        # Clean invisible characters
+
+        # Remove invisible / BOM chars that confuse widths
         text = text.replace("\u200b", "").replace("\ufeff", "")
-        # Insert soft hyphens at URL separators for better wrapping
-        text = re.sub(r"([/_?=&-])", lambda m: m.group(1) + "\u00AD", text)
 
-        def chunk(word, size=60):
-            return [word[i:i+size] for i in range(0, len(word), size)]
+        # Optionally, make break opportunities visible (keeps characters intact)
+        # You can also insert soft hyphens here if you prefer:
+        # text = re.sub(r"([/_?=&-])", lambda m: m.group(1) + "\u00AD", text)
 
-        words = []
-        for w in text.split():
-            if len(w) > max_chars:
-                words.extend(chunk(w))
-            else:
-                words.append(w)
+        # Effective max width for a line (in current font/size)
+        max_width = pdf.w - pdf.l_margin - pdf.r_margin
 
+        # Split by whitespace. We'll break tokens by character if needed.
+        tokens = text.split(" ")
         line = ""
-        for w in words:
-            if len(line + " " + w) > max_chars:
-                pdf.multi_cell(0, line_height, line.strip(), break_long_words=True)
-                line = w
-            else:
-                line += " " + w
-        if line:
-            pdf.multi_cell(0, line_height, line.strip(), break_long_words=True)
 
+        for token in tokens:
+            candidate = (line + " " + token).strip() if line else token
+
+            # Does candidate fit?
+            if pdf.get_string_width(candidate) <= max_width:
+                line = candidate
+                continue
+
+            # Candidate does not fit.
+            # If there is something already in `line`, flush it first.
+            if line:
+                pdf.multi_cell(0, line_height, line)
+                line = ""
+
+            # Now handle the token itself (it might be very long)
+            if pdf.get_string_width(token) <= max_width:
+                # token fits alone on a line
+                line = token
+                continue
+
+            # Token is too long --> break it by characters
+            chunk = ""
+            for ch in token:
+                if pdf.get_string_width(chunk + ch) <= max_width:
+                    chunk += ch
+                else:
+                    # Output the chunk and start a new one
+                    if chunk:
+                        pdf.multi_cell(0, line_height, chunk)
+                    chunk = ch
+            # leftover chunk becomes current line
+            line = chunk
+
+        # flush remaining
+        if line:
+            pdf.multi_cell(0, line_height, line)
+
+    # Iterate rows and write content
     for _, row in df.iterrows():
         ts = str(row.get("timestamp", "N/A"))
         cam = str(row.get("camera_id", "N/A"))
@@ -161,13 +209,14 @@ def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
         pdf.multi_cell(0, 7, f"Timestamp: {ts} | Camera: {cam} | Class: {cls} | Confidence: {conf:.2f}")
 
         pdf.set_font("Courier", "", 8)
-        proof = row.get("proof_url", "") or row.get("s3_image_url", "")
-        safe_multicell(pdf, f"Proof URL: {proof}")
+        proof = row.get("proof_url", "") or row.get("s3_image_url", "") or ""
+        safe_multicell(pdf, f"Proof URL: {proof}", line_height=5.0)
 
         pdf.ln(4)
 
     pdf.output(filename)
     return filename
+
 
 def send_email(to_email: str, subject: str, body: str, attachment_path: str) -> bool:
     """Sends an email with an attachment using SMTP."""
