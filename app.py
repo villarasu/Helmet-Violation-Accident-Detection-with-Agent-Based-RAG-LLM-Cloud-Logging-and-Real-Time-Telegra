@@ -123,7 +123,7 @@ def wrap_url(url: str, max_length: int = 100) -> str:
 
 def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
     """
-    Creates a PDF report from a DataFrame, safely handling long URLs and zero-width characters.
+    Creates a PDF report from a DataFrame, safely handling long URLs and text.
     """
     pdf = FPDF()
     pdf.add_page()
@@ -134,16 +134,20 @@ def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
     pdf.set_font("Arial", "", 12)
     pdf.ln(10)
 
-    # Helper: wrap long text
-    def wrap_text(text: str, max_length: int = 80) -> str:
+    # Helper function to wrap long text
+    def wrap_text(text: str, max_length: int = 60) -> str:
         if not text:
             return ""
-        # Remove zero-width and BOM characters
+        # Remove zero-width characters
         text = text.replace('\u200b', '').replace('\ufeff', '')
-        # Split into chunks
+        # Add soft hyphen after certain symbols so FPDF can wrap
+        import re
+        text = re.sub(r"([/_?=&-])", lambda m: m.group(1) + "\xAD", text)
+        # Split into lines of max_length
         lines = [text[i:i+max_length] for i in range(0, len(text), max_length)]
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
+    # Write each detection row
     for _, row in df.iterrows():
         ts = str(row.get("timestamp", "N/A"))
         cam = str(row.get("camera_id", "N/A"))
@@ -157,14 +161,14 @@ def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
             f"Timestamp: {ts} | Camera: {cam} | Class: {cls} | Confidence: {conf:.2f}"
         )
 
-        # Proof URL or S3 URL
+        # Proof URL (safe)
         pdf.set_font("Courier", "", 9)  # monospace for URLs
         proof = row.get("proof_url", "") or row.get("s3_image_url", "")
         safe_proof = wrap_text(proof, max_length=80)
         pdf.multi_cell(0, 5, f"Proof URL: {safe_proof}")
         pdf.ln(4)
 
-    # Output PDF
+    # Save PDF
     pdf.output(filename)
     return filename
 
