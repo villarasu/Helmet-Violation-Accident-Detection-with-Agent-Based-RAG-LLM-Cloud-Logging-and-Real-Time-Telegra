@@ -110,37 +110,46 @@ def send_telegram_alert(camera_id: str, location: str, timestamp: str, confidenc
     except Exception:
         # Don't crash the app if Telegram fails
         st.warning("Telegram alert failed (check token/chat id).")
+
+# ---------------- PDF GENERATION ----------------
 def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
-    pdf = FPDF()
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_right_margin(10)
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(200, 10, "Helmet & Accident Detection Report", ln=True, align="C")
+    pdf.cell(0, 10, "Helmet & Accident Detection Report", ln=True, align="C")
     pdf.set_font("Arial", "", 12)
     pdf.ln(10)
 
-    def safe_multicell(pdf, text, line_height=5, max_chars=90):
-        """
-        Safely adds multi-line text to the PDF, breaking long words and URLs if needed.
-        """
+    def safe_multicell(pdf, text: str, line_height=5, max_chars=80):
+        """Break extremely long words/URLs safely for fpdf2."""
         if not text:
             return
-
-        # Remove zero-width or BOM characters
+        # Clean invisible characters
         text = text.replace("\u200b", "").replace("\ufeff", "")
-        # Insert soft hyphens after common URL/parameter characters
-        text = re.sub(r"([/_?=&-])", lambda m: m.group(1) + "\xAD", text)
+        # Insert soft hyphens at URL separators for better wrapping
+        text = re.sub(r"([/_?=&-])", lambda m: m.group(1) + "\u00AD", text)
 
-        # Split by whitespace first; fallback to max_chars for very long words
-        words = text.split()
-        line = ""
-        for word in words:
-            if len(line + " " + word) > max_chars:
-                pdf.multi_cell(0, line_height, line.strip())  # ← removed break_long_words
-                line = word
+        def chunk(word, size=60):
+            return [word[i:i+size] for i in range(0, len(word), size)]
+
+        words = []
+        for w in text.split():
+            if len(w) > max_chars:
+                words.extend(chunk(w))
             else:
-                line += " " + word
+                words.append(w)
+
+        line = ""
+        for w in words:
+            if len(line + " " + w) > max_chars:
+                pdf.multi_cell(0, line_height, line.strip(), break_long_words=True)
+                line = w
+            else:
+                line += " " + w
         if line:
-            pdf.multi_cell(0, line_height, line.strip())      # ← removed break_long_words
+            pdf.multi_cell(0, line_height, line.strip(), break_long_words=True)
 
     for _, row in df.iterrows():
         ts = str(row.get("timestamp", "N/A"))
@@ -151,9 +160,9 @@ def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
         pdf.set_font("Arial", "B", 10)
         pdf.multi_cell(0, 7, f"Timestamp: {ts} | Camera: {cam} | Class: {cls} | Confidence: {conf:.2f}")
 
-        pdf.set_font("Courier", "", 8)  # Smaller font for long URLs
+        pdf.set_font("Courier", "", 8)
         proof = row.get("proof_url", "") or row.get("s3_image_url", "")
-        safe_multicell(pdf, f"Proof URL: {proof}", line_height=5, max_chars=80)
+        safe_multicell(pdf, f"Proof URL: {proof}")
 
         pdf.ln(4)
 
