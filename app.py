@@ -112,17 +112,14 @@ def send_telegram_alert(camera_id: str, location: str, timestamp: str, confidenc
         st.warning("Telegram alert failed (check token/chat id).")
 
 
-def wrap_url(url: str) -> str:
-    """
-    Safely inserts zero-width spaces after certain URL characters
-    to allow wrapping in PDF.
-    """
+def wrap_url(url: str, max_length: int = 100) -> str:
     if not url:
         return ""
-    
-    # Add zero-width space after / _ ? = & -
-    safe_url = proof
+    display_url = url if len(url) <= max_length else url[:max_length] + "..."
+    # Use soft hyphen instead of zero-width space
+    safe_url = re.sub(r"([/_?=&-])", lambda m: m.group(1) + "\xAD", display_url)
     return safe_url
+
 
 def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
     """Creates a PDF report from a DataFrame with safe URL wrapping."""
