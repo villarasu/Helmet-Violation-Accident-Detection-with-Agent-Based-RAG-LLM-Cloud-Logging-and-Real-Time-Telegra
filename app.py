@@ -111,15 +111,17 @@ def send_telegram_alert(camera_id: str, location: str, timestamp: str, confidenc
         # Don't crash the app if Telegram fails
         st.warning("Telegram alert failed (check token/chat id).")
 
-def wrap_url(url: str, max_len: int = 120) -> str:
-    """Insert break opportunities or truncate long URLs so FPDF can wrap them."""
+
+def wrap_url(url: str) -> str:
+    """
+    Safely inserts zero-width spaces after certain URL characters
+    to allow wrapping in PDF.
+    """
     if not url:
         return ""
-    # Insert zero-width spaces after common URL delimiters for line wrapping
-    safe_url = re.sub(r"([/_?=&-])", r"\1\u200b", url)
-    # Truncate extremely long URLs
-    if len(safe_url) > max_len:
-        return safe_url[:max_len] + "..."
+    
+    # Add zero-width space after / _ ? = & -
+    safe_url = re.sub(r"([/_?=&-])", lambda m: m.group(1) + "\u200b", url)
     return safe_url
 
 def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
