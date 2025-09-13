@@ -122,13 +122,27 @@ def wrap_url(url: str, max_length: int = 100) -> str:
 
 
 def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
-    """Creates a PDF report from a DataFrame with safe URL wrapping."""
+    """
+    Creates a PDF report from a DataFrame, safely handling long URLs and zero-width characters.
+    """
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", "B", size=16)
+    
+    # Title
+    pdf.set_font("Arial", "B", 16)
     pdf.cell(200, 10, "Helmet & Accident Detection Report", ln=True, align="C")
-    pdf.set_font("Arial", size=12)
+    pdf.set_font("Arial", "", 12)
     pdf.ln(10)
+
+    # Helper: wrap long text
+    def wrap_text(text: str, max_length: int = 80) -> str:
+        if not text:
+            return ""
+        # Remove zero-width and BOM characters
+        text = text.replace('\u200b', '').replace('\ufeff', '')
+        # Split into chunks
+        lines = [text[i:i+max_length] for i in range(0, len(text), max_length)]
+        return '\n'.join(lines)
 
     for _, row in df.iterrows():
         ts = str(row.get("timestamp", "N/A"))
@@ -136,18 +150,21 @@ def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
         cls = str(row.get("class_label", "N/A"))
         conf = row.get("confidence", 0.0)
 
+        # Main info
         pdf.set_font("Arial", "B", 10)
         pdf.multi_cell(
             0, 7,
             f"Timestamp: {ts} | Camera: {cam} | Class: {cls} | Confidence: {conf:.2f}"
         )
 
-        pdf.set_font("Arial", "", 9)
+        # Proof URL or S3 URL
+        pdf.set_font("Courier", "", 9)  # monospace for URLs
         proof = row.get("proof_url", "") or row.get("s3_image_url", "")
-        safe_proof = wrap_url(proof)     # ✅ wrap/truncate the URL
+        safe_proof = wrap_text(proof, max_length=80)
         pdf.multi_cell(0, 5, f"Proof URL: {safe_proof}")
         pdf.ln(4)
 
+    # Output PDF
     pdf.output(filename)
     return filename
 
