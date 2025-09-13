@@ -22,7 +22,7 @@ torchvision>=0.18.0
 
 # --- Image and File Handling ---
 Pillow>=10.3.0              # For image manipulation
-fpdf2>=2.7.9                # PDF generation (modern FPDF)
+fpdf2==2.7.9              # PDF generation (modern FPDF)
 
 # --- Networking and Utilities ---
 requests>=2.31.0
