@@ -23,8 +23,6 @@ from botocore.client import Config
 from typing import List, Tuple, Optional
 
 # ================== CONFIG ==================
-#
-
 
 # Load your credentials securely (e.g., from st.secrets)
 # Load secrets
@@ -46,19 +44,12 @@ RDS_DB = st.secrets["RDS_DB"]
 RDS_USER = st.secrets["RDS_USER"]
 RDS_PASS = st.secrets["RDS_PASS"]
 
-
-
-LOCAL_MODEL_PATH =  "best.pt"
-TABLE_NAME       =  "detections"
-
-
+LOCAL_MODEL_PATH = "best.pt"
+TABLE_NAME = "detections"
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-
 # Make sure you have a local model file (e.g., best.pt)
-
-
 
 # Option: if True, DO NOT store detections labeled "helmet" (class 0)
 SKIP_HELMET_DETECTIONS = True
@@ -74,6 +65,7 @@ s3 = boto3.client(
 
 @st.cache_resource
 def load_local_embedder():
+    """Loads the SentenceTransformer model and caches it."""
     try:
         return SentenceTransformer("all-MiniLM-L6-v2")
     except Exception as e:
@@ -84,6 +76,7 @@ local_embedder = load_local_embedder()
 
 # =============== HELPERS ===============
 def presign_s3(bucket: str, key: str, expires_in: int = 3600) -> str:
+    """Generates a presigned URL for an S3 object."""
     if not bucket or not key:
         return ""
     try:
@@ -95,8 +88,8 @@ def presign_s3(bucket: str, key: str, expires_in: int = 3600) -> str:
     except Exception:
         return ""
 
-
-def send_telegram_alert(camera_id, location, timestamp, confidence, proof_url):
+def send_telegram_alert(camera_id: str, location: str, timestamp: str, confidence: float, proof_url: str):
+    """Sends a formatted message to a Telegram chat."""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return
     message = (
@@ -114,10 +107,11 @@ def send_telegram_alert(camera_id, location, timestamp, confidence, proof_url):
             timeout=5,
         )
     except Exception:
-        # don't crash the app if Telegram fails
+        # Don't crash the app if Telegram fails
         st.warning("Telegram alert failed (check token/chat id).")
 
-def make_pdf(df: pd.DataFrame, filename="detection_report.pdf") -> str:
+def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
+    """Creates a PDF report from a DataFrame."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", size=16)
@@ -143,7 +137,8 @@ def make_pdf(df: pd.DataFrame, filename="detection_report.pdf") -> str:
     pdf.output(filename)
     return filename
 
-def send_email(to_email: str, subject: str, body: str, attachment_path: str):
+def send_email(to_email: str, subject: str, body: str, attachment_path: str) -> bool:
+    """Sends an email with an attachment using SMTP."""
     if not SMTP_EMAIL or not SMTP_PASS:
         st.error("❌ SMTP credentials are not configured.")
         return False
@@ -176,9 +171,9 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str):
         st.error(f"❌ Failed to send email: {e}")
         return False
 
-
 def get_embedding(text: str) -> List[float]:
-    text = text[:1500]
+    """Generates a vector embedding for a given text, trying HF API first and falling back to a local model."""
+    text = text[:1500]  # Truncate text to avoid API limits
     if HF_API_KEY:
         try:
             resp = requests.post(
@@ -192,15 +187,19 @@ def get_embedding(text: str) -> List[float]:
                 return emb[0] if isinstance(emb[0], list) else emb
         except Exception:
             st.warning("HF embedding failed, using local embedder.")
+    
     if local_embedder:
         return local_embedder.encode(text, normalize_embeddings=True).tolist()
-    raise RuntimeError("No embedding available.")
+    
+    raise RuntimeError("No embedding model available.")
 
 def get_conn():
+    """Establishes and returns a connection to the PostgreSQL database."""
     return psycopg2.connect(host=RDS_HOST, database=RDS_DB, user=RDS_USER, password=RDS_PASS)
 
 # ============= SQL TOOLS ==============
 def sql_accidents_last_week(conn) -> pd.DataFrame:
+    """Fetches accidents recorded in the last 7 days."""
     register_vector(conn)
     cur = conn.cursor()
     cur.execute(f"""
@@ -213,7 +212,8 @@ def sql_accidents_last_week(conn) -> pd.DataFrame:
     cols = [d[0] for d in cur.description]
     return pd.DataFrame(rows, columns=cols)
 
-def sql_most_helmet_violations(conn, limit=5) -> pd.DataFrame:
+def sql_most_helmet_violations(conn, limit: int = 5) -> pd.DataFrame:
+    """Finds cameras with the most 'no_helmet' violations."""
     register_vector(conn)
     cur = conn.cursor()
     cur.execute(f"""
@@ -227,7 +227,8 @@ def sql_most_helmet_violations(conn, limit=5) -> pd.DataFrame:
     rows = cur.fetchall()
     return pd.DataFrame(rows, columns=["camera_id", "violations"])
 
-def sql_most_detections_by_camera(conn) -> Optional[Tuple[str,int]]:
+def sql_most_detections_by_camera(conn) -> Optional[Tuple[str, int]]:
+    """Finds the single camera with the most total detections."""
     register_vector(conn)
     cur = conn.cursor()
     cur.execute(f"""
@@ -240,6 +241,7 @@ def sql_most_detections_by_camera(conn) -> Optional[Tuple[str,int]]:
     return cur.fetchone()
 
 def sql_violations_by_location(conn) -> pd.DataFrame:
+    """Counts 'no_helmet' violations grouped by location."""
     register_vector(conn)
     cur = conn.cursor()
     cur.execute(f"""
@@ -252,7 +254,8 @@ def sql_violations_by_location(conn) -> pd.DataFrame:
     rows = cur.fetchall()
     return pd.DataFrame(rows, columns=["location", "violations"])
 
-def sql_accidents_by_day(conn, days=14) -> pd.DataFrame:
+def sql_accidents_by_day(conn, days: int = 14) -> pd.DataFrame:
+    """Counts accidents per day for the last N days."""
     register_vector(conn)
     cur = conn.cursor()
     cur.execute(f"""
@@ -267,6 +270,7 @@ def sql_accidents_by_day(conn, days=14) -> pd.DataFrame:
 
 # ============= VECTOR SEARCH ==============
 def vector_search(query: str, top_k: int = 10) -> pd.DataFrame:
+    """Performs semantic vector search on the database."""
     q_emb = get_embedding(query)
     conn = get_conn()
     register_vector(conn)
@@ -274,7 +278,7 @@ def vector_search(query: str, top_k: int = 10) -> pd.DataFrame:
     cur.execute(f"""
         SELECT id, timestamp, camera_id, location, class_label, confidence, s3_image_url
         FROM {TABLE_NAME}
-          ORDER BY embedding <-> %s::vector
+        ORDER BY embedding <-> %s::vector
         LIMIT %s
     """, (q_emb, top_k))
     rows = cur.fetchall()
@@ -286,20 +290,23 @@ def vector_search(query: str, top_k: int = 10) -> pd.DataFrame:
     return df
 
 # ============= RAG LOGIC ==============
-DATA_KEYWORDS = ["accident","helmet","violation","violations","camera","location","detection","timestamp","report","no_helmet","accidents","helmet_violation"]
+DATA_KEYWORDS = ["accident", "helmet", "violation", "violations", "camera", "location", "detection", "timestamp", "report", "no_helmet", "accidents", "helmet_violation"]
 
 def is_data_related(q: str) -> bool:
+    """Checks if a query string is related to the dataset's keywords."""
     ql = q.lower()
     if any(k in ql for k in DATA_KEYWORDS):
         return True
-    for token in ["who","what","when","which","show","list","how many","count","top"]:
+    for token in ["who", "what", "when", "which", "show", "list", "how many", "count", "top"]:
         if token in ql and any(k in ql for k in DATA_KEYWORDS):
             return True
     return False
 
 def analyze_dataframe(df: pd.DataFrame) -> str:
+    """Generates a human-readable summary from a DataFrame."""
     if df.empty:
         return "No matching records found."
+    
     total = len(df)
     by_class = df["class_label"].value_counts().to_dict() if "class_label" in df.columns else {}
     by_camera = df["camera_id"].value_counts().head(5).to_dict() if "camera_id" in df.columns else {}
@@ -309,79 +316,87 @@ def analyze_dataframe(df: pd.DataFrame) -> str:
     lines = [f"Found {total} matching events."]
     if by_class:
         lines.append("\nBreakdown by class:")
-        for cls,cnt in by_class.items():
+        for cls, cnt in by_class.items():
             lines.append(f"  • {cls}: {cnt}")
     if by_camera:
         lines.append("\nTop cameras:")
-        for cam,cnt in by_camera.items():
+        for cam, cnt in by_camera.items():
             lines.append(f"  • {cam}: {cnt}")
     if earliest and latest:
         lines.append(f"\nTime range: {earliest.strftime('%Y-%m-%d %H:%M')} → {latest.strftime('%Y-%m-%d %H:%M')}")
+        
     return "\n".join(lines)
 
-
-def run_rag_pipeline(user_query: str):
+def run_rag_pipeline(user_query: str) -> Tuple[str, pd.DataFrame]:
+    """Main RAG pipeline to interpret a query and fetch data."""
     ql = user_query.lower().strip()
+    
     if not is_data_related(ql):
         return ("⚠️ This assistant only answers data-related questions about detections, cameras, helmet violations, timestamps and reports.", pd.DataFrame())
+
     conn = get_conn()
     register_vector(conn)
     try:
+        # Rule-based routing for specific questions
         if "accidents from last week" in ql or ("accidents" in ql and "last week" in ql):
             df = sql_accidents_last_week(conn)
             if not df.empty:
                 df["proof_url"] = df["s3_image_url"].apply(lambda k: presign_s3(S3_BUCKET, k))
-            conn.close()
             return (f"Accidents from last 7 days: {len(df)} records.", df)
+        
         if "most helmet violations" in ql or ("helmet" in ql and "most" in ql):
             df = sql_most_helmet_violations(conn, limit=10)
-            conn.close()
             return ("Top cameras by helmet violations.", df)
+        
         if "most" in ql and "camera" in ql:
             res = sql_most_detections_by_camera(conn)
-            conn.close()
             if res:
-                cam,count = res
-                return (f"📸 Camera *{cam}* recorded the most detections: {count} events.", pd.DataFrame([{"camera_id":cam,"total_detections":count}]))
+                cam, count = res
+                return (f"📸 Camera *{cam}* recorded the most detections: {count} events.", pd.DataFrame([{"camera_id": cam, "total_detections": count}]))
             else:
                 return ("No detection data available.", pd.DataFrame())
+
         if "helmet violations by location" in ql or ("helmet" in ql and "location" in ql):
             df = sql_violations_by_location(conn)
-            conn.close()
             return ("Helmet violations grouped by location.", df)
+
         if "accidents by day" in ql or ("accidents" in ql and "by day" in ql):
             df = sql_accidents_by_day(conn, days=14)
-            conn.close()
             return ("Accident counts by day (last 14 days).", df)
+        
+        # Fallback to vector search for general queries
         df = vector_search(user_query, top_k=50)
         summary = analyze_dataframe(df)
         return (f"Results retrieved by semantic search:\n\n{summary}", df)
+
     except Exception as e:
         st.error(f"Database query failed: {e}")
+        return (f"Error while handling query: {e}", pd.DataFrame())
+    finally:
         if conn:
             conn.close()
-        return (f"Error while handling query: {e}", pd.DataFrame())
 
 # ============= STREAMLIT APP ==============
 st.set_page_config(page_title="Helmet & Accident RAG Chatbot", layout="wide", page_icon="🚦")
 st.title("🚦 Helmet & Accident Detection System — RAG Chatbot")
-mode = st.sidebar.radio("Mode", ["Detect", "Query", "RAG Chatbot"])
+mode = st.sidebar.radio("Mode", ["Detect", "RAG Chatbot"])
 
-# label mapping for your YOLO model
+# Label mapping for your YOLO model
 LABELS_MAP = {0: "helmet", 1: "no_helmet", 2: "accident"}
 
 if mode == "Detect":
-    uploaded_file = st.file_uploader("Upload Image or Video", type=["jpg","jpeg","png","mp4"])
-    camera_id = st.text_input("Camera ID","cam_001")
-    location = st.text_input("Location","unknown")
+    st.header("Upload Media for Detection")
+    uploaded_file = st.file_uploader("Upload Image or Video", type=["jpg", "jpeg", "png", "mp4"])
+    camera_id = st.text_input("Camera ID", "cam_001")
+    location = st.text_input("Location", "unknown")
+    
     if uploaded_file:
         ext = os.path.splitext(uploaded_file.name)[1]
         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
             tmp.write(uploaded_file.read())
-            tmp.flush()
             tmp_path = tmp.name
 
-        # load model and run inference
+        # Load model and run inference
         model = YOLO(LOCAL_MODEL_PATH)
         results = model(tmp_path)
 
@@ -395,7 +410,7 @@ if mode == "Detect":
                 try:
                     cls_id = int(box.cls[0])
                 except Exception:
-                    continue # Skip if class ID is invalid
+                    continue  # Skip if class ID is invalid
 
                 class_label = LABELS_MAP.get(cls_id, f"cls_{cls_id}")
                 confidence = float(box.conf[0])
@@ -443,34 +458,6 @@ if mode == "Detect":
         conn.close()
         os.remove(tmp_path)
 
-elif mode == "Query":
-    st.header("Query Logs (Structured Queries)")
-    query = st.text_input("Enter your question:")
-    if st.button("Search"):
-        if not is_data_related(query):
-            st.warning("❌ Only data-related queries are supported.")
-            st.stop()
-        conn = get_conn()
-        ql = query.lower()
-        try:
-            if "accidents from last week" in ql:
-                df = sql_accidents_last_week(conn)
-                if not df.empty and "s3_image_url" in df.columns:
-                    df["proof_url"] = df["s3_image_url"].apply(lambda k: presign_s3(S3_BUCKET,k))
-                st.dataframe(df)
-            elif "most helmet violations" in ql:
-                st.dataframe(sql_most_helmet_violations(conn,limit=10))
-            elif "most" in ql and "camera" in ql:
-                res = sql_most_detections_by_camera(conn)
-                if res:
-                    st.success(f"📸 Camera **{res[0]}** recorded the **most detections**: {res[1]} events.")
-                else:
-                    st.info("No detection data found.")
-            else:
-                st.info("Try: 'accidents from last week' or 'most helmet violations'.")
-        finally:
-            conn.close()
-
 elif mode == "RAG Chatbot":
     st.header("RAG Chatbot — Ask data-related questions")
 
@@ -504,6 +491,8 @@ elif mode == "RAG Chatbot":
         st.dataframe(df_results.head(50))
 
         # --- Visualizations ---
+        st.markdown("---")
+        st.markdown("### Visualizations")
         col1, col2 = st.columns(2)
         with col1:
             if "class_label" in df_results.columns:
