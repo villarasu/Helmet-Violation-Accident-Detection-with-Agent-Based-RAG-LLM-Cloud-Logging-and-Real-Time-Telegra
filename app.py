@@ -121,7 +121,7 @@ def wrap_url(url: str) -> str:
         return ""
     
     # Add zero-width space after / _ ? = & -
-    safe_url = re.sub(r"([/_?=&-])", lambda m: m.group(1) + "\u200b", url)
+    safe_url = proof
     return safe_url
 
 def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
