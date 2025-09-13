@@ -111,64 +111,35 @@ def send_telegram_alert(camera_id: str, location: str, timestamp: str, confidenc
         # Don't crash the app if Telegram fails
         st.warning("Telegram alert failed (check token/chat id).")
 
-
-def wrap_url(url: str, max_length: int = 100) -> str:
-    if not url:
-        return ""
-    display_url = url if len(url) <= max_length else url[:max_length] + "..."
-    # Use soft hyphen instead of zero-width space
-    safe_url = re.sub(r"([/_?=&-])", lambda m: m.group(1) + "\xAD", display_url)
-    return safe_url
-
-
 def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
-    """
-    Creates a PDF report from a DataFrame, safely handling long URLs and text.
-    """
     pdf = FPDF()
     pdf.add_page()
-    
-    # Title
     pdf.set_font("Arial", "B", 16)
     pdf.cell(200, 10, "Helmet & Accident Detection Report", ln=True, align="C")
     pdf.set_font("Arial", "", 12)
     pdf.ln(10)
 
-    # Helper function to wrap long text
-    def wrap_text(text: str, max_length: int = 60) -> str:
+    def safe_multicell(pdf, text, line_height=5, max_chars=90):
         if not text:
-            return ""
-        # Remove zero-width characters
-        text = text.replace('\u200b', '').replace('\ufeff', '')
-        # Add soft hyphen after certain symbols so FPDF can wrap
-        import re
+            return
+        text = text.replace("\u200b", "").replace("\ufeff", "")
         text = re.sub(r"([/_?=&-])", lambda m: m.group(1) + "\xAD", text)
-        # Split into lines of max_length
-        lines = [text[i:i+max_length] for i in range(0, len(text), max_length)]
-        return "\n".join(lines)
+        lines = [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
+        for line in lines:
+            pdf.multi_cell(0, line_height, line)
 
-    # Write each detection row
     for _, row in df.iterrows():
         ts = str(row.get("timestamp", "N/A"))
         cam = str(row.get("camera_id", "N/A"))
         cls = str(row.get("class_label", "N/A"))
         conf = row.get("confidence", 0.0)
-
-        # Main info
         pdf.set_font("Arial", "B", 10)
-        pdf.multi_cell(
-            0, 7,
-            f"Timestamp: {ts} | Camera: {cam} | Class: {cls} | Confidence: {conf:.2f}"
-        )
-
-        # Proof URL (safe)
-        pdf.set_font("Courier", "", 9)  # monospace for URLs
+        pdf.multi_cell(0, 7, f"Timestamp: {ts} | Camera: {cam} | Class: {cls} | Confidence: {conf:.2f}")
+        pdf.set_font("Courier", "", 9)
         proof = row.get("proof_url", "") or row.get("s3_image_url", "")
-        safe_proof = wrap_text(proof, max_length=80)
-        pdf.multi_cell(0, 5, f"Proof URL: {safe_proof}")
+        safe_multicell(pdf, f"Proof URL: {proof}", line_height=5, max_chars=80)
         pdf.ln(4)
 
-    # Save PDF
     pdf.output(filename)
     return filename
 
