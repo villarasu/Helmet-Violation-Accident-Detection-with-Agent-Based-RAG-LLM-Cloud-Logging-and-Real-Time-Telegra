@@ -134,14 +134,13 @@ def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
         words = text.split()
         line = ""
         for word in words:
-            # If adding this word exceeds max_chars, write the current line
             if len(line + " " + word) > max_chars:
-                pdf.multi_cell(0, line_height, line.strip(), break_long_words=True)
+                pdf.multi_cell(0, line_height, line.strip())  # ← removed break_long_words
                 line = word
             else:
                 line += " " + word
         if line:
-            pdf.multi_cell(0, line_height, line.strip(), break_long_words=True)
+            pdf.multi_cell(0, line_height, line.strip())      # ← removed break_long_words
 
     for _, row in df.iterrows():
         ts = str(row.get("timestamp", "N/A"))
@@ -149,16 +148,14 @@ def make_pdf(df: pd.DataFrame, filename: str = "detection_report.pdf") -> str:
         cls = str(row.get("class_label", "N/A"))
         conf = row.get("confidence", 0.0)
 
-        # Header for each detection
         pdf.set_font("Arial", "B", 10)
         pdf.multi_cell(0, 7, f"Timestamp: {ts} | Camera: {cam} | Class: {cls} | Confidence: {conf:.2f}")
 
-        # Proof URL or S3 image
         pdf.set_font("Courier", "", 8)  # Smaller font for long URLs
         proof = row.get("proof_url", "") or row.get("s3_image_url", "")
         safe_multicell(pdf, f"Proof URL: {proof}", line_height=5, max_chars=80)
 
-        pdf.ln(4)  # Space between entries
+        pdf.ln(4)
 
     pdf.output(filename)
     return filename
