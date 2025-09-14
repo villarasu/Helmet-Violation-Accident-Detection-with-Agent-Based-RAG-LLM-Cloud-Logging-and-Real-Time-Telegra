@@ -1,0 +1,13 @@
+# Root path of your dataset
+path: C:/Users/Thennarasu/OneDrive/Documents/Helmet and Accident 
+
+# Train/val/test directories (relative to 'path')
+train: train/images
+val: valid/images
+test: test/images
+
+# Number of classes
+nc: 3
+
+# Class names
+names: ["With Helmet", "Without Helmet", "Accident"]
